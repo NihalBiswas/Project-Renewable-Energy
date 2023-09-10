@@ -1,0 +1,350 @@
+---
+title: "Project-Final"
+author: "Nihal Biswas"
+date: "2023-06-10"
+output: html_document
+---
+
+# Exporting Data
+
+```{r}
+library(readxl)
+setwd("C:\\Users\\Admin\\Desktop\\college\\project")
+electric=read_excel("Compiled.xlsx",sheet = "Sheet2")
+electric=electric[,-2:-3]
+electric_only=na.omit(electric[,1:5])
+head(electric)
+```
+
+
+
+# FORECASTING URBAN POPULATION TILL 2050
+
+```{r}
+library(tseries)
+library(forecast)
+library(urca)
+adf.test(electric$Urban_Population)
+```
+
+- P value greater than 0.05, hence the data is not stationary.
+- We thus the ACF value to see the optimum number of lags at which the data becomes stationary.
+
+
+```{r}
+acf(electric$Urban_Population)
+```
+
+- From the graph we can see that the optimal number of lags is 5.
+- We now check for stationary of the variables at lag 5.
+
+```{r}
+Urbanpop_lag = diff(electric$Urban_Population,lag = 15)
+adf.test(Urbanpop_lag)
+```
+
+- Hence we can conclude that the data is stationary at lag of order 15.
+
+
+## ARIMA model to forecast
+
+
+```{r}
+Urbanpop_ARIMA = auto.arima(electric$Urban_Population,ic = "aic")
+summary(Urbanpop_ARIMA)
+checkresiduals(Urbanpop_ARIMA)
+Urbanpop_forecasted = forecast(Urbanpop_ARIMA,h = 2050 - electric$YEAR[nrow(electric)])
+plot(Urbanpop_forecasted)
+Urbanpop_forecasted = as.data.frame(Urbanpop_forecasted)
+Urbanpop_forecasted
+```
+
+- We see that the residuals have a normal distribution, thus we move forward with the forecasting.
+
+
+# FORECASTING THE NUMBER OF INDUSTRIES TILL 2050
+
+```{r}
+Industries = na.omit(electric$`Total Industries`)
+adf.test(Industries)
+```
+
+- We see that the original data is not stationary, hence we look at the ACF graph to determine the optimal number of lags at which the data will be stationary.
+
+
+```{r}
+acf(Industries)
+```
+
+- Here we can see that the data will be stationary at lag of order 4.
+- We shall confirm this through the Augmented Dicky-Fueller test.
+
+
+```{r}
+Industries_lag = diff(Industries,lag = 4)
+adf.test(Industries_lag)
+```
+
+- We can observe that the data is not stationary at lag 4 also. Hence, we check at lag 3 and 2 and make conclusions accordingly.
+
+```{r}
+Industries_lag1 = diff(Industries,lag = 3)
+adf.test(Industries_lag1)
+Industries_lag2 = diff(Industries,lag = 2)
+adf.test(Industries_lag2)
+```
+
+- Hence we see that the test is closer to significance at lag 3 than at lag 2 or 4.
+- Hence we move forward with lag of order 3.
+
+
+## ARIMA modelling
+
+```{r}
+Industries_ARIMA = auto.arima(Industries,ic = "aic")
+summary(Industries_ARIMA)
+checkresiduals(Industries_ARIMA)
+Industries_forecasted = forecast(Industries_ARIMA, h = 36)
+plot(Industries_forecasted)
+Industries_forecasted=as.data.frame(Industries_forecasted)
+Industries_forecasted
+```
+
+
+# Data Cleaning
+
+```{r}
+electric_omitted=na.omit(electric)
+head(electric_omitted)
+```
+
+# Finding the type of relationship  
+
+```{r}
+library(ggplot2)
+ggplot(electric_omitted,aes(Urban_Population,`Electric_power_consumption_(kWh_per_capita)`))+geom_point()+geom_smooth(method = "lm",se=F)
+```
+
+
+
+# Linear Regression Model 
+
+
+```{r}
+## Level-Level Model
+model.01=lm(electric_only$`Electric_power_consumption_(kWh_per_capita)`~electric_only$Urban_Population)
+
+## Level-log Model
+model.02=lm(electric_only$`Electric_power_consumption_(kWh_per_capita)`~log(electric_only$Urban_Population))
+model.03=lm(log(electric_only$`Electric_power_consumption_(kWh_per_capita)`)~electric_only$Urban_Population)
+
+## Log- Log model
+model.04=lm(log(electric_only$`Electric_power_consumption_(kWh_per_capita)`)~log(electric_only$Urban_Population))
+
+# Quadratic
+model.05=lm(log(electric_only$`Electric_power_consumption_(kWh_per_capita)`)~I(electric_only$Urban_Population^2))
+
+library(stargazer)
+stargazer(model.01,model.02,model.03,model.04,model.05,type = "text")
+```
+
+
+Electric_power_consumption regressed over %_of_Urban_population_from_total_population
+
+
+# Auto-correlation
+
+```{r}
+acf(model.01$residuals)
+acf(model.02$residuals)
+acf(model.03$residuals)
+acf(model.04$residuals)
+acf(model.05$residuals)
+```
+
+## Auto-correlation Test
+
+```{r}
+library(lmtest)
+bgtest(model.01,order=3,type="Chisq")
+bgtest(model.02,order=3,type="Chisq")
+bgtest(model.03,order=3,type="Chisq")
+bgtest(model.04,order=3,type="Chisq")
+bgtest(model.05,order=3,type="Chisq")
+```
+
+- All the above models contains auto-correlation of order3.
+- The quadratic Form has the highest R-squared value.
+
+
+# Model 4
+
+```{r}
+sqr_Urban_Population=electric_omitted$Urban_Population*electric_omitted$Urban_Population
+model4=lm(electric_omitted$`Electric_power_consumption_(kWh_per_capita)`~sqr_Urban_Population)
+summary(model4)
+```
+
+- The model 4 shows a positive intercept, which is statistically significant. 
+- However in the residual plot it shows a pattern in the later half of the graph. There is some problem with our model. However model 4 is theoretically closest model and we shall build more upon that.
+
+```{r}
+plot(model4)
+```
+
+
+# Cleaning Model 4
+
+Adding the number of industries to dampen the effect of heteroscedasticity
+
+```{r}
+model4.1=lm(electric_omitted$`Electric_power_consumption_(kWh_per_capita)`~sqr_Urban_Population+electric_omitted$`Total Industries`)
+summary(model4.1)
+stargazer(model4.1,type = "text")
+```
+
+- using model 4 even though the pattern in the residual plot is dampened and the residual is not showing a prominent pattern. However, the intercept in this case again becomes negative which is not in lined with our common knowledge. 
+- We can also see that by adding the Total Industries variable the adjusted R-squared value also increased.
+
+# We have to perform wald f test in model 4 and model 4.1
+
+```{r}
+
+```
+
+
+```{r}
+acf(model4.1$residuals)
+bgtest(model4.1,order=3,type="Chisq")
+```
+
+- After addition of new variable the residuals are also not correlated any more.
+
+
+# Visualizing with our estimated values
+
+```{r}
+predict(model4.1,electric_omitted)
+electric_omitted$Estimated_values=predict(model4.1,electric_omitted)
+ggplot(electric_omitted,aes(Urban_Population,`Electric_power_consumption_(kWh_per_capita)`))+geom_point(color="red")+geom_line(aes(y = Estimated_values,),color="blue",linetype="dashed")
+```
+
+```{r}
+ggplot(electric_omitted,aes(`Total Industries`,`Electric_power_consumption_(kWh_per_capita)`))+geom_point(color="red")+geom_line(aes(y=Estimated_values))
+```
+
+
+# Normalizing the data for Model 4.1
+
+```{r}
+sqr_Urban_Population_scale=scale(sqr_Urban_Population)
+electric_omitted_scaled=na.omit(scale(electric))
+electric_omitted_scaled=data.frame(electric_omitted_scaled)
+model4.2=lm(electric_omitted_scaled$Electric_power_consumption_.kWh_per_capita.~sqr_Urban_Population_scale+electric_omitted_scaled$Total.Industries)
+summary(model4.2)
+
+```
+
+# Predicting 
+
+```{r}
+# For un-scaled Model 4.1
+electric_est=read_excel("Compiled.xlsx",sheet = "Estimation")
+electric_est=electric_est[-1:-30,]
+m=-7.640+0.000000000000002549*(electric_est$Urban_Population^2)+0.001426*(electric_est$`Total Industries`)
+electric_est$Estimated_consumption=m
+tail(electric_est$Estimated_consumption)
+```
+
+# Visualization
+
+
+```{r}
+ggplot(electric_est,aes(Urban_Population,`Electric_power_consumption_(kWh_per_capita)`))+geom_point(color="red")+geom_line(aes(y = electric_est$Estimated_consumption,),color="blue",linetype="dashed")
+```
+
+- From the above diagram we can see the projected value for power consumption till 2050.
+
+
+
+# Generation of Energy
+
+```{r}
+m
+gen_energy=read_excel("Compiled.xlsx",sheet = "Sheet3")
+gen_energy_omit=na.omit(gen_energy)
+cor(gen_energy_omit$`Total_Electricity_Renewable(kWh)`,gen_energy_omit$Estimated_consumption)
+plot(gen_energy_omit$Estimated_consumption,gen_energy_omit$`Total_Electricity_Renewable(kWh)`)
+```
+
+# Regression Model
+
+```{r}
+gen_model1=lm(gen_energy_omit$`Total_Electricity_Renewable(kWh)`~gen_energy_omit$Estimated_consumption)
+summary(gen_model1)
+```
+
+```{r}
+gen_model2=lm(gen_energy_omit$`Total_Electricity_Renewable(kWh)`~log(gen_energy_omit$Estimated_consumption))
+summary(gen_model2)
+```
+
+```{r}
+acf(gen_model2$residuals)
+dwtest(gen_model2)
+bgtest(gen_model2,order = 1,type = "Chisq")
+```
+
+
+# Prediction Generation
+
+```{r}
+p=-10900000000+57660000*(gen_energy$Estimated_consumption)
+gen_energy$predicted_generation=p
+p
+```
+
+
+
+
+#Visualizing the estimated generation of Renewable energy
+
+```{r}
+ggplot(gen_energy_omit,aes(`Total_Electricity_Renewable(kWh)`,Estimated_consumption))+geom_point(color="red")+geom_line(aes(y = Estimated_consumption,),color="blue",linetype="dashed")
+```
+
+
+```{r}
+Comparison=read_excel("Compiled.xlsx",sheet = "Sheet3")
+total_consumption=Comparison$Estimated_consumption*Comparison$Population_total
+total_renewable_generation=p
+Final=cbind(Comparison$Year,total_consumption,total_renewable_generation)
+Final=data.frame(Final)
+head(Final)
+```
+
+# Visualization
+
+```{r}
+ggplot(gen_energy_omit,aes(`Total_Electricity_Renewable(kWh)`,Estimated_consumption))+geom_point(color="red")+geom_line(aes(y = Estimated_consumption,),color="blue",linetype="dashed")
+```
+
+
+```{r}
+plot(Final$V1,Final$total_consumption,type="l",col="red")
+abline(lm(Final$V1~Final$total_renewable_generation),col = "green")
+
+```
+
+```{r}
+Final$total_renewable_generation
+```
+
+
+
+
+
+
+
+
+
